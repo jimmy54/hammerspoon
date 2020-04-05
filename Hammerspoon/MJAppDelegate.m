@@ -52,6 +52,12 @@
         NSString *spoonPath = [MJConfigDir() stringByAppendingPathComponent:@"Spoons"];
         NSString *spoonName = [fileAndPath lastPathComponent];
         NSString *dstSpoonFullPath = [spoonPath stringByAppendingPathComponent:spoonName];
+
+        if ([dstSpoonFullPath isEqualToString:fileAndPath]) {
+            NSLog(@"User double clicked on a Spoon in %@, skipping", MJConfigDir());
+            return YES;
+        }
+
         NSFileManager *fileManager = [NSFileManager defaultManager];
 
         // Remove any pre-existing copy of the Spoon
@@ -65,7 +71,7 @@
                 [alert addButtonWithTitle:@"OK"];
                 [alert setMessageText:@"Error upgrading Spoon"];
                 [alert setInformativeText:[NSString stringWithFormat:@"%@\n\nSource: %@\nDest: %@", fileError.localizedDescription, fileAndPath, spoonPath]];
-                [alert setAlertStyle:NSCriticalAlertStyle];
+                [alert setAlertStyle:NSAlertStyleCritical];
                 [alert runModal];
                 return YES;
             }
@@ -78,7 +84,7 @@
             [alert addButtonWithTitle:@"OK"];
             [alert setMessageText:@"Error installing Spoon"];
             [alert setInformativeText:[NSString stringWithFormat:@"%@\n\nSource: %@\nDest: %@", fileError.localizedDescription, fileAndPath, spoonPath]];
-            [alert setAlertStyle:NSCriticalAlertStyle];
+            [alert setAlertStyle:NSAlertStyleCritical];
             [alert runModal];
         } else {
             NSUserNotification *notification = [[NSUserNotification alloc] init];
@@ -114,6 +120,7 @@
 
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
+    BOOL isTesting = NO;
     
     // User is holding down Command (0x37) & Option (0x3A) keys:
     if (CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState,0x3A) && CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState,0x37)) {
@@ -123,7 +130,7 @@
         [alert addButtonWithTitle:@"Delete Preferences"];
         [alert setMessageText:@"Do you want to delete the preferences?"];
         [alert setInformativeText:@"Deleting the preferences will reset all Hammerspoon settings (including everything that uses hs.settings) to their defaults."];
-        [alert setAlertStyle:NSWarningAlertStyle];
+        [alert setAlertStyle:NSAlertStyleWarning];
         
         if ([alert runModal] == NSAlertSecondButtonReturn) {
             
@@ -147,6 +154,8 @@
     if(NSClassFromString(@"XCTest") != nil) {
         // Hammerspoon Tests
         NSLog(@"in testing mode!");
+        isTesting = YES;
+
         NSBundle *mainBundle = [NSBundle mainBundle];
         NSBundle *bundle = [NSBundle bundleWithPath:[NSString stringWithFormat:@"%@/Contents/Plugins/Hammerspoon Tests.xctest", mainBundle.bundlePath]];
         NSString *lsUnitPath = [bundle pathForResource:@"lsunit" ofType:@"lua"];
@@ -207,7 +216,7 @@
 
     // Enable Crashlytics, if we have an API key available
 #ifdef CRASHLYTICS_API_KEY
-    if (HSUploadCrashData()) {
+    if (HSUploadCrashData() && !isTesting) {
         Crashlytics *crashlytics = [Crashlytics sharedInstance];
         crashlytics.debugMode = YES;
         [Crashlytics startWithAPIKey:[NSString stringWithUTF8String:CRASHLYTICS_API_KEY] delegate:self];
@@ -271,7 +280,7 @@
 - (void) registerDefaultDefaults {
     [[NSUserDefaults standardUserDefaults]
      registerDefaults: @{@"NSApplicationCrashOnExceptions": @YES,
-                         MJShowDockIconKey: @YES,
+                         MJShowDockIconKey: @NO,
                          MJShowMenuIconKey: @YES,
                          HSAutoLoadExtensions: @YES,
                          HSUploadCrashDataKey: @YES,
@@ -330,7 +339,7 @@
     [alert addButtonWithTitle:@"OK"];
     [alert setMessageText:@"Hammerspoon crash detected"];
     [alert setInformativeText:@"Your init.lua is loading Mjolnir modules and a previous launch crashed.\n\nHammerspoon ships with updated versions of many of the Mjolnir modules, with both new features and many bug fixes.\n\nPlease consult our API documentation and migrate your config."];
-    [alert setAlertStyle:NSCriticalAlertStyle];
+    [alert setAlertStyle:NSAlertStyleCritical];
     [alert runModal];
 }
 
@@ -350,12 +359,14 @@
 
 #pragma mark - Sparkle delegate methods
 - (void)updater:(id)updater didFindValidUpdate:(id)update {
-    NSLog(@"Update found: %@", [update valueForKey:@"versionString"]);
+    NSLog(@"Update found: %@ (Build: %@)", [update valueForKey:@"displayVersionString"], [update valueForKey:@"versionString"]);
     self.updateAvailable = [update valueForKey:@"versionString"];
+    self.updateAvailableDisplayVersion = [update valueForKey:@"displayVersionString"];
 }
 
 - (void)updaterDidNotFindUpdate:(id)update {
     self.updateAvailable = nil;
+    self.updateAvailableDisplayVersion = nil;
 }
 
 @end

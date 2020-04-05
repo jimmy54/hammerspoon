@@ -1,8 +1,8 @@
-#import <Foundation/Foundation.h>
-#import <Cocoa/Cocoa.h>
-#import <Carbon/Carbon.h>
-#import <LuaSkin/LuaSkin.h>
-#import <WebKit/WebKit.h>
+@import Foundation;
+@import Cocoa;
+@import Carbon;
+@import LuaSkin;
+@import WebKit;
 #import "PocketSocket/PSWebSocket.h"
 
 // Websocket userdata struct
@@ -161,24 +161,50 @@ static void remove_delegate(__unused lua_State* L, connectionDelegate* delegate)
 // add it to the request and add the content length header field
 static void getBodyFromStack(lua_State* L, int index, NSMutableURLRequest* request){
     if (!lua_isnoneornil(L, index)) {
-        NSString* body = [NSString stringWithCString:lua_tostring(L, 3) encoding:NSASCIIStringEncoding];
-        NSData *postData = [body dataUsingEncoding:NSASCIIStringEncoding allowLossyConversion:YES];
-        NSString *postLength = [NSString stringWithFormat:@"%lu", [postData length]];
-
-        [request setValue:postLength forHTTPHeaderField:@"Content-Length"];
-        [request setHTTPBody:postData];
+        NSData *postData ;
+        if (lua_type(L, index) == LUA_TSTRING) {
+            postData = [[LuaSkin shared] toNSObjectAtIndex:index withOptions:LS_NSLuaStringAsDataOnly] ;
+        } else {
+            NSString* body = [NSString stringWithCString:lua_tostring(L, index) encoding:NSASCIIStringEncoding];
+            postData = [body dataUsingEncoding:NSASCIIStringEncoding allowLossyConversion:YES];
+        }
+        if (postData) {
+            NSString *postLength = [NSString stringWithFormat:@"%lu", [postData length]];
+            [request setValue:postLength forHTTPHeaderField:@"Content-Length"];
+            [request setHTTPBody:postData];
+        } else {
+            [LuaSkin logError:[NSString stringWithFormat:@"%s - getBodyFromStack - non-nil entry at stack index %u but unable to convert to NSData", WS_USERDATA_TAG, index]] ;
+        }
     }
 }
 
 // Gets all information for the request from the stack and creates a request
-static NSMutableURLRequest* getRequestFromStack(__unused lua_State* L){
+static NSMutableURLRequest* getRequestFromStack(__unused lua_State* L, NSString* cachePolicy){
     LuaSkin *skin = [LuaSkin shared];
     NSString* url = [skin toNSObjectAtIndex:1];
     NSString* method = [skin toNSObjectAtIndex:2];
+        
+    NSUInteger selectedCachePolicy;
+    if ([cachePolicy isEqualToString:@"protocolCachePolicy"]) {
+        selectedCachePolicy = NSURLRequestUseProtocolCachePolicy;
+    } else if ([cachePolicy isEqualToString:@"ignoreLocalCache"]) {
+        selectedCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
+    } else if ([cachePolicy isEqualToString:@"ignoreLocalAndRemoteCache"]) {
+        selectedCachePolicy = NSURLRequestReloadIgnoringLocalAndRemoteCacheData;
+    } else if ([cachePolicy isEqualToString:@"returnCacheOrLoad"]) {
+        selectedCachePolicy = NSURLRequestReturnCacheDataElseLoad;
+    } else if ([cachePolicy isEqualToString:@"returnCacheDontLoad"]) {
+        selectedCachePolicy = NSURLRequestReturnCacheDataDontLoad;
+    } else if ([cachePolicy isEqualToString:@"reloadRevalidatingCache"]) {
+        selectedCachePolicy = NSURLRequestReloadRevalidatingCacheData;
+    } else {
+        selectedCachePolicy = NSURLRequestUseProtocolCachePolicy;
+    }
 
     NSMutableURLRequest *request;
-
-    request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:url]];
+    request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:url]
+                                      cachePolicy: selectedCachePolicy
+                                  timeoutInterval: 60.00];
     [request setHTTPMethod:method];
     return request;
 }
@@ -199,7 +225,7 @@ static void extractHeadersFromStack(lua_State* L, int index, NSMutableURLRequest
     }
 }
 
-/// hs.http.doAsyncRequest(url, method, data, headers, callback)
+/// hs.http.doAsyncRequest(url, method, data, headers, callback, [cachePolicy])
 /// Function
 /// Creates an HTTP request and executes it asynchronously
 ///
@@ -212,6 +238,7 @@ static void extractHeadersFromStack(lua_State* L, int index, NSMutableURLRequest
 ///   * code - A number containing the HTTP response code
 ///   * body - A string containing the body of the response
 ///   * headers - A table containing the HTTP headers of the response
+///  * cachePolicy - An optional string containing the cache policy ("protocolCachePolicy", "ignoreLocalCache", "ignoreLocalAndRemoteCache", "returnCacheOrLoad", "returnCacheDontLoad" or "reloadRevalidatingCache"). Defaults to `protocolCachePolicy`.
 ///
 /// Returns:
 ///  * None
@@ -221,9 +248,11 @@ static void extractHeadersFromStack(lua_State* L, int index, NSMutableURLRequest
 ///  * If the Content-Type response header begins `text/` then the response body return value is a UTF8 string. Any other content type passes the response body, unaltered, as a stream of bytes.
 static int http_doAsyncRequest(lua_State* L){
     LuaSkin *skin = [LuaSkin shared];
-    [skin checkArgs:LS_TSTRING, LS_TSTRING, LS_TSTRING|LS_TNIL, LS_TTABLE|LS_TNIL, LS_TFUNCTION, LS_TBREAK];
+    [skin checkArgs:LS_TSTRING, LS_TSTRING, LS_TSTRING|LS_TNIL, LS_TTABLE|LS_TNIL, LS_TFUNCTION, LS_TSTRING | LS_TOPTIONAL, LS_TBREAK];
 
-    NSMutableURLRequest* request = getRequestFromStack(L);
+    NSString* cachePolicy = [skin toNSObjectAtIndex:6];
+    
+    NSMutableURLRequest* request = getRequestFromStack(L, cachePolicy);
     getBodyFromStack(L, 3, request);
     extractHeadersFromStack(L, 4, request);
 
@@ -247,7 +276,7 @@ static int http_doAsyncRequest(lua_State* L){
     return 0;
 }
 
-/// hs.http.doRequest(url, method, [data, headers]) -> int, string, table
+/// hs.http.doRequest(url, method, [data, headers, cachePolicy]) -> int, string, table
 /// Function
 /// Creates an HTTP request and executes it synchronously
 ///
@@ -256,6 +285,7 @@ static int http_doAsyncRequest(lua_State* L){
 ///  * method - A string containing the HTTP method to use (e.g. "GET", "POST", etc)
 ///  * data - An optional string containing the data to POST to the URL, or nil to send no data
 ///  * headers - An optional table of string keys and values used as headers for the request, or nil to add no headers
+///  * cachePolicy - An optional string containing the cache policy ("protocolCachePolicy", "ignoreLocalCache", "ignoreLocalAndRemoteCache", "returnCacheOrLoad", "returnCacheDontLoad" or "reloadRevalidatingCache"). Defaults to `protocolCachePolicy`.
 ///
 /// Returns:
 ///  * A number containing the HTTP response status code
@@ -270,9 +300,11 @@ static int http_doAsyncRequest(lua_State* L){
 ///  * If the Content-Type response header begins `text/` then the response body return value is a UTF8 string. Any other content type passes the response body, unaltered, as a stream of bytes.
 static int http_doRequest(lua_State* L) {
     LuaSkin *skin = [LuaSkin shared];
-    [skin checkArgs:LS_TSTRING, LS_TSTRING, LS_TSTRING|LS_TNIL|LS_TOPTIONAL, LS_TTABLE|LS_TNIL|LS_TOPTIONAL, LS_TBREAK];
+    [skin checkArgs:LS_TSTRING, LS_TSTRING, LS_TSTRING|LS_TNIL|LS_TOPTIONAL, LS_TTABLE|LS_TNIL|LS_TOPTIONAL, LS_TSTRING|LS_TOPTIONAL, LS_TBREAK];
 
-    NSMutableURLRequest *request = getRequestFromStack(L);
+    NSString* cachePolicy = [skin toNSObjectAtIndex:5];
+    
+    NSMutableURLRequest *request = getRequestFromStack(L, cachePolicy);
     getBodyFromStack(L, 3, request);
     extractHeadersFromStack(L, 4, request);
 

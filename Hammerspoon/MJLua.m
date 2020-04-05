@@ -11,8 +11,9 @@
 #import "MJAutoLaunch.h"
 #import "MJDockIcon.h"
 #import "HSAppleScript.h"
-#import <Crashlytics/Crashlytics.h>
+#import "Crashlytics.h"
 #import "HSLogger.h" // This should come after Crashlytics
+#import <AVFoundation/AVFoundation.h>
 
 @interface MJPreferencesWindowController ()
 - (void) reflectDefaults ;
@@ -186,7 +187,8 @@ static int core_reload(lua_State* L) {
 static int push_hammerAppInfo(lua_State* L) {
     LuaSkin *skin = [LuaSkin shared];
     NSDictionary *appInfo = @{
-                              @"version": [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleVersion"],
+                              @"version": [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleShortVersionString"],
+                              @"build": [[[NSBundle mainBundle] infoDictionary] objectForKey:@"CFBundleVersion"],
                               @"resourcePath": @([[[NSBundle mainBundle] resourcePath] fileSystemRepresentation]),
                               @"bundlePath": @([[[NSBundle mainBundle] bundlePath] fileSystemRepresentation]),
                               @"executablePath": @([[[NSBundle mainBundle] executablePath] fileSystemRepresentation]),
@@ -223,6 +225,122 @@ static int core_accessibilityState(lua_State* L) {
     BOOL enabled = MJAccessibilityIsEnabled();
     if (shouldprompt) { MJAccessibilityOpenPanel(); }
     lua_pushboolean(L, enabled);
+    return 1;
+}
+
+/// hs.microphoneState(shouldPrompt) -> boolean
+/// Function
+///
+/// Parameters:
+///  * shouldPrompt - an optional boolean value indicating if we should request microphone access. Defaults to false.
+///
+/// Returns:
+///  * `true` or `false` indicating whether or not Microphone access is enabled for Hammerspoon.
+///
+/// Notes:
+///  * Will always return `true` on macOS 10.13 or earlier.
+static int core_microphoneState(lua_State* L) {
+    LuaSkin *skin = [LuaSkin shared];
+    BOOL shouldprompt = lua_toboolean(L, 1);
+    
+    // Request permission to access the camera and microphone.
+    if (@available(macOS 10.14, *)) {
+        switch ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeAudio])
+        {
+            case AVAuthorizationStatusAuthorized:
+            {
+                // The user has previously granted access to the camera.
+                lua_pushboolean(L, YES) ;
+                break;
+            }
+            case AVAuthorizationStatusNotDetermined:
+            {
+                if (shouldprompt) {
+                    // The app hasn't yet asked the user for camera access.
+                    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL granted) {
+                        if (!granted) {
+                            [skin logWarn:@"Hammerspoon has been declined Microphone access by the user."] ;
+                        }
+                    }];
+                }
+                lua_pushboolean(L, NO) ;
+                break;
+            }
+            case AVAuthorizationStatusDenied:
+            {
+                // The user has previously denied access.
+                lua_pushboolean(L, NO) ;
+                break;
+            }
+            case AVAuthorizationStatusRestricted:
+            {
+                // The user can't grant access due to restrictions.
+                lua_pushboolean(L, NO) ;
+                break;
+            }
+        }
+    } else {
+        // Fallback on earlier versions
+        lua_pushboolean(L, YES) ;
+    }
+    return 1;
+}
+
+/// hs.cameraState(shouldPrompt) -> boolean
+/// Function
+///
+/// Parameters:
+///  * shouldPrompt - an optional boolean value indicating if we should request camear access. Defaults to false.
+///
+/// Returns:
+///  * `true` or `false` indicating whether or not Camera access is enabled for Hammerspoon.
+///
+/// Notes:
+///  * Will always return `true` on macOS 10.13 or earlier.
+static int core_cameraState(lua_State* L) {
+    LuaSkin *skin = [LuaSkin shared];
+    BOOL shouldprompt = lua_toboolean(L, 1);
+    
+    // Request permission to access the camera and microphone.
+    if (@available(macOS 10.14, *)) {
+        switch ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo])
+        {
+            case AVAuthorizationStatusAuthorized:
+            {
+                // The user has previously granted access to the camera.
+                lua_pushboolean(L, YES) ;
+                break;
+            }
+            case AVAuthorizationStatusNotDetermined:
+            {
+                if (shouldprompt) {
+                    // The app hasn't yet asked the user for camera access.
+                    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo completionHandler:^(BOOL granted) {
+                        if (!granted) {
+                            [skin logWarn:@"Hammerspoon has been declined Microphone access by the user."] ;
+                        }
+                    }];
+                }
+                lua_pushboolean(L, NO) ;
+                break;
+            }
+            case AVAuthorizationStatusDenied:
+            {
+                // The user has previously denied access.
+                lua_pushboolean(L, NO) ;
+                break;
+            }
+            case AVAuthorizationStatusRestricted:
+            {
+                // The user can't grant access due to restrictions.
+                lua_pushboolean(L, NO) ;
+                break;
+            }
+        }
+    } else {
+        // Fallback on earlier versions
+        lua_pushboolean(L, YES) ;
+    }
     return 1;
 }
 
@@ -316,15 +434,16 @@ static int checkForUpdates(lua_State *L) {
     return 0 ;
 }
 
-/// hs.updateAvailable() -> string or false
+/// hs.updateAvailable() -> string or false, string
 /// Function
-/// Gets the version number of an available update
+/// Gets the version & build number of an available update
 ///
 /// Parameters:
 ///  * None
 ///
 /// Returns:
-///  * A string containing the version number of the latest release, or a boolean false if no update is available
+///  * A string containing the display version of the latest release, or a boolean false if no update is available
+///  * A string containing the build number of the latest release, or `nil` if no update is available
 ///
 /// Notes:
 ///  * This is not a live check, it is a cached result of whatever the previous update check found. By default Hammerspoon checks for updates every few hours, but you can also add your own timer to check for updates more frequently with `hs.checkForUpdates()`
@@ -338,14 +457,17 @@ static int updateAvailable(lua_State *L) {
 #pragma clang diagnostic ignored "-Wundeclared-selector"
 
     NSString *updateAvailable = [appDelegate performSelector:@selector(updateAvailable)];
+    NSString *updateAvailableDisplayVersion = [appDelegate performSelector:@selector(updateAvailableDisplayVersion)];
     if (updateAvailable == nil) {
         lua_pushboolean(L, 0);
+        return 1;
     } else {
+        [skin pushNSObject:updateAvailableDisplayVersion];
         [skin pushNSObject:updateAvailable];
+        return 2;
     }
 
 #pragma clang diagnostic pop
-    return 1;
 }
 
 /// hs.canCheckForUpdates() -> boolean
@@ -550,6 +672,8 @@ static luaL_Reg corelib[] = {
     {"reload", core_reload},
     {"focus", core_focus},
     {"accessibilityState", core_accessibilityState},
+    {"microphoneState", core_microphoneState},
+    {"cameraState", core_cameraState},
     {"getObjectMetatable", core_getObjectMetatable},
     {"uploadCrashData", core_uploadCrashData},
     {"cleanUTF8forConsole", core_cleanUTF8},
@@ -626,7 +750,7 @@ void MJLuaInit(void) {
         [alert addButtonWithTitle:@"OK"];
         [alert setMessageText:@"Hammerspoon installation is corrupted"];
         [alert setInformativeText:@"Please re-install Hammerspoon"];
-        [alert setAlertStyle:NSCriticalAlertStyle];
+        [alert setAlertStyle:NSAlertStyleCritical];
         [alert runModal];
         [[NSApplication sharedApplication] terminate: nil];
     }
@@ -647,7 +771,7 @@ void MJLuaInit(void) {
         [alert addButtonWithTitle:@"OK"];
         [alert setMessageText:@"Hammerspoon initialization failed"];
         [alert setInformativeText:errorMessage];
-        [alert setAlertStyle:NSCriticalAlertStyle];
+        [alert setAlertStyle:NSAlertStyleCritical];
         [alert runModal];
     } else {
         evalfn = [MJLuaState luaRef:refTable];

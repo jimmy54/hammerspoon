@@ -9,6 +9,7 @@
 @import AVFoundation;
 
 #define USERDATA_TAG "hs.image"
+int refTable = LUA_NOREF;
 
 // NSWorkspace iconForFile: logs a warning every time you try to query when the path is nil.  Since
 // this happens a lot when trying to query based on a file bundle it means anything using spotlight
@@ -43,16 +44,8 @@ static int pushNSImageNameTable(lua_State *L) {
         [skin pushNSObject:NSImageNameInvalidDataFreestandingTemplate] ;         lua_setfield(L, -2, "InvalidDataFreestandingTemplate") ;
         [skin pushNSObject:NSImageNameLockLockedTemplate] ;                      lua_setfield(L, -2, "LockLockedTemplate") ;
         [skin pushNSObject:NSImageNameLockUnlockedTemplate] ;                    lua_setfield(L, -2, "LockUnlockedTemplate") ;
-// added in 10.12
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wpartial-availability"
-    if (&NSImageNameGoForwardTemplate != NULL) {
         [skin pushNSObject:NSImageNameGoForwardTemplate] ;                       lua_setfield(L, -2, "GoForwardTemplate") ;
-    }
-    if (&NSImageNameGoBackTemplate != NULL) {
         [skin pushNSObject:NSImageNameGoBackTemplate] ;                          lua_setfield(L, -2, "GoBackTemplate") ;
-    }
-#pragma clang diagnostic pop
         [skin pushNSObject:NSImageNameGoRightTemplate] ;                         lua_setfield(L, -2, "GoRightTemplate") ;
         [skin pushNSObject:NSImageNameGoLeftTemplate] ;                          lua_setfield(L, -2, "GoLeftTemplate") ;
         [skin pushNSObject:NSImageNameRightFacingTriangleTemplate] ;             lua_setfield(L, -2, "RightFacingTriangleTemplate") ;
@@ -1014,24 +1007,50 @@ static int imageFromName(lua_State *L) {
     return 1 ;
 }
 
-/// hs.image.imageFromURL(url) -> object
+/// hs.image.imageFromURL(url[, callbackFn]) -> object
 /// Constructor
 /// Creates an `hs.image` object from the contents of the specified URL.
 ///
 /// Parameters:
 ///  * url - a web url specifying the location of the image to retrieve
+///  * callbackFn - an optional callback function to be called when the image fetching is complete
 ///
 /// Returns:
-///  * An `hs.image` object or nil, if the url does not specify image contents or is unreachable
+///  * An `hs.image` object or nil, if the url does not specify image contents or is unreachable, or if a callback function is supplied
+///
+/// Notes:
+///  * If a callback function is supplied, this function will return nil immediately and the image will be fetched asynchronously
 static int imageFromURL(lua_State *L) {
     LuaSkin *skin = [LuaSkin shared] ;
-    [skin checkArgs:LS_TSTRING, LS_TBREAK] ;
+    [skin checkArgs:LS_TSTRING, LS_TFUNCTION|LS_TOPTIONAL, LS_TBREAK] ;
     NSURL *theURL = [NSURL URLWithString:[skin toNSObjectAtIndex:1]] ;
-    if (theURL) {
+    if (!theURL) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    if (lua_type(L, 2) != LUA_TFUNCTION) {
         [skin pushNSObject:[[NSImage alloc] initWithContentsOfURL:theURL]] ;
     } else {
-        lua_pushnil(L) ;
+        int fnRef = [skin luaRef:refTable atIndex:2];
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(void){
+            NSImage *image = [[NSImage alloc] initWithContentsOfURL:theURL];
+
+            dispatch_async(dispatch_get_main_queue(), ^(void){
+                LuaSkin *bgSkin = [LuaSkin shared];
+                _lua_stackguard_entry(bgSkin.L);
+
+                [bgSkin pushLuaRef:refTable ref:fnRef];
+                [bgSkin pushNSObject:image];
+                [bgSkin protectedCallAndTraceback:1 nresults:0];
+                [bgSkin luaUnref:refTable ref:fnRef];
+
+                _lua_stackguard_exit(bgSkin.L);
+            });
+        });
+        lua_pushnil(L);
     }
+
     return 1 ;
 }
 
@@ -1320,7 +1339,7 @@ static int croppedCopy(__unused lua_State* L) {
     NSRect targetRect = NSMakeRect(0.0, 0.0, theImage.size.width, theImage.size.height);
     NSImage *newImage = [[NSImage alloc] initWithSize:targetRect.size];
     [newImage lockFocus];
-    [theImage drawInRect:targetRect fromRect:targetRect operation:NSCompositeCopy fraction:1.0];
+    [theImage drawInRect:targetRect fromRect:targetRect operation:NSCompositingOperationCopy fraction:1.0];
     [newImage unlockFocus];
 
 // http://stackoverflow.com/questions/35643020/nsimage-drawinrect-and-nsview-cachedisplayinrect-memory-retained
@@ -1402,7 +1421,7 @@ static int encodeAsString(lua_State* L) {
     NSRect targetRect = NSMakeRect(0.0, 0.0, theImage.size.width, theImage.size.height);
     NSImage *newImage = [[NSImage alloc] initWithSize:targetRect.size];
     [newImage lockFocus];
-    [theImage drawInRect:targetRect fromRect:targetRect operation:NSCompositeCopy fraction:1.0];
+    [theImage drawInRect:targetRect fromRect:targetRect operation:NSCompositingOperationCopy fraction:1.0];
     [newImage unlockFocus];
 
     NSBitmapImageRep *rep ;
@@ -1422,7 +1441,7 @@ static int encodeAsString(lua_State* L) {
 
         [NSGraphicsContext saveGraphicsState];
         [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:rep]];
-        [newImage drawInRect:targetRect fromRect:NSZeroRect operation:NSCompositeCopy fraction:1.0];
+        [newImage drawInRect:targetRect fromRect:NSZeroRect operation:NSCompositingOperationCopy fraction:1.0];
         [NSGraphicsContext restoreGraphicsState];
     } else {
         NSData *tiffRep = [newImage TIFFRepresentation];
@@ -1497,7 +1516,7 @@ static int saveToFile(lua_State* L) {
     NSRect targetRect = NSMakeRect(0.0, 0.0, theImage.size.width, theImage.size.height);
     NSImage *newImage = [[NSImage alloc] initWithSize:targetRect.size];
     [newImage lockFocus];
-    [theImage drawInRect:targetRect fromRect:targetRect operation:NSCompositeCopy fraction:1.0];
+    [theImage drawInRect:targetRect fromRect:targetRect operation:NSCompositingOperationCopy fraction:1.0];
     [newImage unlockFocus];
 
     NSBitmapImageRep *rep ;
@@ -1517,7 +1536,7 @@ static int saveToFile(lua_State* L) {
 
         [NSGraphicsContext saveGraphicsState];
         [NSGraphicsContext setCurrentContext:[NSGraphicsContext graphicsContextWithBitmapImageRep:rep]];
-        [newImage drawInRect:targetRect fromRect:NSZeroRect operation:NSCompositeCopy fraction:1.0];
+        [newImage drawInRect:targetRect fromRect:NSZeroRect operation:NSCompositingOperationCopy fraction:1.0];
         [NSGraphicsContext restoreGraphicsState];
     } else {
         NSData *tiffRep = [newImage TIFFRepresentation];
@@ -1683,10 +1702,10 @@ static luaL_Reg moduleLib[] = {
 
 int luaopen_hs_image_internal(lua_State* L) {
     LuaSkin *skin = [LuaSkin shared] ;
-    [skin registerLibraryWithObject:USERDATA_TAG
-                          functions:moduleLib
-                      metaFunctions:nil
-                    objectFunctions:userdata_metaLib];
+    refTable = [skin registerLibraryWithObject:USERDATA_TAG
+                                     functions:moduleLib
+                                 metaFunctions:nil
+                               objectFunctions:userdata_metaLib];
 
     pushNSImageNameTable(L); lua_setfield(L, -2, "systemImageNames") ;
     additionalImages(L) ;    lua_setfield(L, -2, "additionalImageNames") ;

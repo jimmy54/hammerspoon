@@ -303,17 +303,17 @@ static int eventtap_event_getRawEventData(lua_State* L) {
             lua_pushinteger(L, [sysEvent modifierFlags]);                                     lua_setfield(L, -2, "modifierFlags") ;
             lua_pushinteger(L, type);                                                         lua_setfield(L, -2, "type") ;
             lua_pushinteger(L, [sysEvent windowNumber]);                                      lua_setfield(L, -2, "windowNumber") ;
-            if ((type == NSKeyDown) || (type == NSKeyUp)) {
+            if ((type == NSEventTypeKeyDown) || (type == NSEventTypeKeyUp)) {
                 lua_pushstring(L, [[sysEvent characters] UTF8String]) ;                       lua_setfield(L, -2, "characters") ;
                 lua_pushstring(L, [[sysEvent charactersIgnoringModifiers] UTF8String]) ;      lua_setfield(L, -2, "charactersIgnoringModifiers") ;
                 lua_pushinteger(L, [sysEvent keyCode]) ;                                      lua_setfield(L, -2, "keyCode") ;
             }
-            if ((type == NSLeftMouseDown) || (type == NSLeftMouseUp) || (type == NSRightMouseDown) || (type == NSRightMouseUp) || (type == NSOtherMouseDown) || (type == NSOtherMouseUp)) {
+            if ((type == NSEventTypeLeftMouseDown) || (type == NSEventTypeLeftMouseUp) || (type == NSEventTypeRightMouseDown) || (type == NSEventTypeRightMouseUp) || (type == NSEventTypeOtherMouseDown) || (type == NSEventTypeOtherMouseUp)) {
                 lua_pushinteger(L, [sysEvent buttonNumber]) ;                                 lua_setfield(L, -2, "buttonNumber") ;
                 lua_pushinteger(L, [sysEvent clickCount]) ;                                   lua_setfield(L, -2, "clickCount") ;
                 lua_pushnumber(L, (lua_Number)[sysEvent pressure]) ;                          lua_setfield(L, -2, "pressure") ;
             }
-            if ((type == NSAppKitDefined) || (type == NSSystemDefined) || (type == NSApplicationDefined) || (type == NSPeriodic)) {
+            if ((type == NSEventTypeAppKitDefined) || (type == NSEventTypeSystemDefined) || (type == NSEventTypeApplicationDefined) || (type == NSEventTypePeriodic)) {
                 lua_pushinteger(L, [sysEvent data1]) ;                                        lua_setfield(L, -2, "data1") ;
                 lua_pushinteger(L, [sysEvent data2]) ;                                        lua_setfield(L, -2, "data2") ;
                 lua_pushinteger(L, [sysEvent subtype]) ;                                      lua_setfield(L, -2, "subtype") ;
@@ -389,6 +389,78 @@ static int eventtap_event_setKeyCode(lua_State* L) {
     CGEventSetIntegerValueField(event, kCGKeyboardEventKeycode, (int64_t)keycode);
 
     lua_settop(L,1) ;
+    return 1;
+}
+
+/// hs.eventtap.event:getUnicodeString()
+/// Method
+/// Gets the single unicode character of an event
+///
+/// Parameters:
+///  * None
+///
+/// Returns:
+///  * A string containing the unicode character
+static int eventtap_event_getUnicodeString(lua_State *L) {
+    LuaSkin *skin = [LuaSkin shared];
+    [skin checkArgs:LS_TUSERDATA, EVENT_USERDATA_TAG, LS_TBREAK];
+
+    CGEventRef event = *(CGEventRef*)luaL_checkudata(L, 1, EVENT_USERDATA_TAG);
+    UniChar *buffer;
+    UniCharCount actual = 0;
+    // Get the length of the string
+    CGEventKeyboardGetUnicodeString(event, 0, &actual, NULL);
+    buffer = malloc(actual * sizeof(UniChar));
+    CGEventKeyboardGetUnicodeString(event, actual, &actual, buffer);
+
+    // Convert buffer -> NSString
+    NSString *theString = [NSString stringWithCharacters:buffer length:actual];
+    free(buffer);
+    [skin pushNSObject:theString];
+
+    return 1;
+}
+
+/// hs.eventtap.event:setUnicodeString(string)
+/// Method
+/// Sets a unicode string as the output of the event
+///
+/// Parameters:
+///  * string - A string containing unicode characters, which will be applied to the event
+///
+/// Returns:
+///  * The `hs.eventtap.event` object
+///
+/// Notes:
+///  * Calling this method will reset any flags previously set on the event (because they don't make any sense, and you should not try to set flags again)
+///  * This is likely to only work with short unicode strings that resolve to a single character
+static int eventtap_event_setUnicodeString(lua_State *L) {
+    LuaSkin *skin = [LuaSkin shared];
+    [skin checkArgs:LS_TUSERDATA, EVENT_USERDATA_TAG, LS_TSTRING, LS_TBREAK];
+
+    CGEventRef event = *(CGEventRef*)luaL_checkudata(L, 1, EVENT_USERDATA_TAG);
+    NSString *theString = [skin toNSObjectAtIndex:2];
+    NSUInteger stringLen = [theString lengthOfBytesUsingEncoding:NSUnicodeStringEncoding];
+    NSUInteger usedLen = 0;
+
+    UniChar *buffer = malloc(stringLen);
+    BOOL result = [theString getBytes:(void*)buffer
+                            maxLength:stringLen
+                           usedLength:&usedLen
+                             encoding:NSUnicodeStringEncoding
+                              options:NSStringEncodingConversionAllowLossy
+                                range:NSMakeRange(0, theString.length)
+                       remainingRange:NULL];
+    if (!result) {
+        [skin logWarn:[NSString stringWithFormat:@"hs.eventtap.event:setUnicodeString() failed to convert: %@", theString]];
+    }
+
+    CGEventSetFlags(event, (CGEventFlags)0);
+    CGEventKeyboardSetUnicodeString(event, theString.length, buffer);
+
+    free(buffer);
+
+    lua_settop(L, 1);
     return 1;
 }
 
@@ -713,7 +785,7 @@ static int eventtap_event_newSystemKeyEvent(lua_State* L) {
         return 1;
     }
 
-    NSEvent *keyEvent = [NSEvent otherEventWithType:NSSystemDefined location:NSMakePoint(0, 0) modifierFlags:(isDown ? NX_KEYDOWN : NX_KEYUP) timestamp:0 windowNumber:0 context:0 subtype:NX_SUBTYPE_AUX_CONTROL_BUTTONS data1:(keyVal << 16 | (isDown ? NX_KEYDOWN : NX_KEYUP) << 8) data2:-1];
+    NSEvent *keyEvent = [NSEvent otherEventWithType:NSEventTypeSystemDefined location:NSMakePoint(0, 0) modifierFlags:(isDown ? NX_KEYDOWN : NX_KEYUP) timestamp:0 windowNumber:0 context:0 subtype:NX_SUBTYPE_AUX_CONTROL_BUTTONS data1:(keyVal << 16 | (isDown ? NX_KEYDOWN : NX_KEYUP) << 8) data2:-1];
     new_eventtap_event(L, keyEvent.CGEvent);
 
     return 1;
@@ -789,11 +861,13 @@ static int eventtap_event_newMouseEvent(lua_State* L) {
         button = kCGMouseButtonRight;
     else if (strcmp(buttonString, "other") == 0)
         button = kCGMouseButtonCenter;
+    else if (strcmp(buttonString, "none") == 0)
+        button = 0;
 
     if (!lua_isnoneornil(L, 4) && (lua_type(L, 4) == LUA_TTABLE)) {
         lua_pushnil(L);
         while (lua_next(L, 4) != 0) {
-            modifier = lua_tostring(L, -2);
+            modifier = lua_tostring(L, -1);
             if (!modifier) {
                 [skin logBreadcrumb:[NSString stringWithFormat:@"hs.eventtap.event.newMouseEvent() unexpected entry in modifiers table: %d", lua_type(L, -1)]];
                 lua_pop(L, 1);
@@ -863,7 +937,7 @@ static int eventtap_event_systemKey(lua_State* L) {
     NSEventType type     = [sysEvent type] ;
 
     lua_newtable(L) ;
-    if ((type == NSAppKitDefined) || (type == NSSystemDefined) || (type == NSApplicationDefined) || (type == NSPeriodic)) {
+    if ((type == NSEventTypeAppKitDefined) || (type == NSEventTypeSystemDefined) || (type == NSEventTypeApplicationDefined) || (type == NSEventTypePeriodic)) {
         NSInteger data1      = [sysEvent data1] ;
         if ([sysEvent subtype] == NX_SUBTYPE_AUX_CONTROL_BUTTONS) {
             int keyCode      = (data1 & 0xFFFF0000) >> 16;
@@ -999,20 +1073,20 @@ static void pushtypestable(lua_State* L) {
     lua_pushstring(L, "otherMouseDragged") ;        lua_rawseti(L, -2, kCGEventOtherMouseDragged);
     lua_pushinteger(L, kCGEventNull);               lua_setfield(L, -2, "nullEvent");
     lua_pushstring(L, "nullEvent") ;                lua_rawseti(L, -2, kCGEventNull);
-    lua_pushinteger(L, NSMouseEntered);             lua_setfield(L, -2, "NSMouseEntered");
-    lua_pushstring(L, "NSMouseEntered") ;           lua_rawseti(L, -2, NSMouseEntered);
-    lua_pushinteger(L, NSMouseExited);              lua_setfield(L, -2, "NSMouseExited");
-    lua_pushstring(L, "NSMouseExited") ;            lua_rawseti(L, -2, NSMouseExited);
-    lua_pushinteger(L, NSAppKitDefined);            lua_setfield(L, -2, "NSAppKitDefined");
-    lua_pushstring(L, "NSAppKitDefined") ;          lua_rawseti(L, -2, NSAppKitDefined);
-    lua_pushinteger(L, NSSystemDefined);            lua_setfield(L, -2, "NSSystemDefined");
-    lua_pushstring(L, "NSSystemDefined") ;          lua_rawseti(L, -2, NSSystemDefined);
-    lua_pushinteger(L, NSApplicationDefined);       lua_setfield(L, -2, "NSApplicationDefined");
-    lua_pushstring(L, "NSApplicationDefined") ;     lua_rawseti(L, -2, NSApplicationDefined);
-    lua_pushinteger(L, NSPeriodic);                 lua_setfield(L, -2, "NSPeriodic");
-    lua_pushstring(L, "NSPeriodic") ;               lua_rawseti(L, -2, NSPeriodic);
-    lua_pushinteger(L, NSCursorUpdate);             lua_setfield(L, -2, "NSCursorUpdate");
-    lua_pushstring(L, "NSCursorUpdate") ;           lua_rawseti(L, -2, NSCursorUpdate);
+    lua_pushinteger(L, NSEventTypeMouseEntered);             lua_setfield(L, -2, "NSMouseEntered");
+    lua_pushstring(L, "NSMouseEntered") ;           lua_rawseti(L, -2, NSEventTypeMouseEntered);
+    lua_pushinteger(L, NSEventTypeMouseExited);              lua_setfield(L, -2, "NSMouseExited");
+    lua_pushstring(L, "NSMouseExited") ;            lua_rawseti(L, -2, NSEventTypeMouseExited);
+    lua_pushinteger(L, NSEventTypeAppKitDefined);            lua_setfield(L, -2, "NSAppKitDefined");
+    lua_pushstring(L, "NSAppKitDefined") ;          lua_rawseti(L, -2, NSEventTypeAppKitDefined);
+    lua_pushinteger(L, NSEventTypeSystemDefined);            lua_setfield(L, -2, "NSSystemDefined");
+    lua_pushstring(L, "NSSystemDefined") ;          lua_rawseti(L, -2, NSEventTypeSystemDefined);
+    lua_pushinteger(L, NSEventTypeApplicationDefined);       lua_setfield(L, -2, "NSApplicationDefined");
+    lua_pushstring(L, "NSApplicationDefined") ;     lua_rawseti(L, -2, NSEventTypeApplicationDefined);
+    lua_pushinteger(L, NSEventTypePeriodic);                 lua_setfield(L, -2, "NSPeriodic");
+    lua_pushstring(L, "NSPeriodic") ;               lua_rawseti(L, -2, NSEventTypePeriodic);
+    lua_pushinteger(L, NSEventTypeCursorUpdate);             lua_setfield(L, -2, "NSCursorUpdate");
+    lua_pushstring(L, "NSCursorUpdate") ;           lua_rawseti(L, -2, NSEventTypeCursorUpdate);
     lua_pushinteger(L, NSEventTypeGesture);         lua_setfield(L, -2, "NSEventTypeGesture");
     lua_pushstring(L, "NSEventTypeGesture") ;       lua_rawseti(L, -2, NSEventTypeGesture);
     lua_pushinteger(L, NSEventTypeMagnify);         lua_setfield(L, -2, "NSEventTypeMagnify");
@@ -1299,6 +1373,8 @@ static const luaL_Reg eventtapevent_metalib[] = {
     {"setFlags",        eventtap_event_setFlags},
     {"getKeyCode",      eventtap_event_getKeyCode},
     {"setKeyCode",      eventtap_event_setKeyCode},
+    {"getUnicodeString", eventtap_event_getUnicodeString},
+    {"setUnicodeString", eventtap_event_setUnicodeString},
     {"getType",         eventtap_event_getType},
     {"post",            eventtap_event_post},
     {"getProperty",     eventtap_event_getProperty},

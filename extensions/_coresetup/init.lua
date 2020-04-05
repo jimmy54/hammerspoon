@@ -8,6 +8,10 @@ return {setup=function(...)
   local traceback = debug.traceback
   local crashLog = require("hs.crash").crashLog
   local fnutils = require("hs.fnutils")
+  local hsmath = require("hs.math")
+
+  -- seed RNG before we do anything else
+  math.randomseed(hsmath.randomFloat()*100000000)
 
   -- setup core functions
 
@@ -60,6 +64,20 @@ hs.textDroppedToDockIconCallback = nil
 ---  * If multiple files are sent, this callback will be called once for each file
 ---  * This callback will be triggered when ANY file type is dragged onto the Hammerspoon Dock Icon, however certain filetypes are also processed seperately by Hammerspoon. For example, `hs.urlevent` will be triggered when the following filetypes are dropped onto the Dock Icon: HTML Documents (.html, .htm, .shtml, .jhtml), Plain text documents (.txt, .text), Web site locations (.url), XHTML documents (.xhtml, .xht, .xhtm, .xht).
 hs.fileDroppedToDockIconCallback = nil
+
+--- hs.relaunch()
+--- Function
+--- Quits and relaunches Hammerspoon.
+---
+--- Parameters:
+---  * None
+---
+--- Returns:
+---  * None
+hs.relaunch = function()
+    os.execute([[ (while ps -p ]]..hs.processInfo.processID..[[ > /dev/null ; do sleep 1 ; done ; open -a "]]..hs.processInfo.bundlePath..[[" ) & ]])
+    hs._exit(true, true)
+end
 
 --- hs.docstrings_json_file
 --- Constant
@@ -233,10 +251,37 @@ hs.fileDroppedToDockIconCallback = nil
 ---  * To learn how to distribute your own code as a Spoon, see https://github.com/Hammerspoon/hammerspoon/blob/master/SPOON.md
   hs.loadSpoon = function (name, global)
     print("-- Loading Spoon: "..name)
+
+    -- First, find the full path of the Spoon
+    local spoonFile = package.searchpath(name, package.path)
+    if spoonFile == nil then
+        hs.showError("Unable to load Spoon: "..name)
+        return
+    end
+    local spoonPath = spoonFile:match("(.*/)")
+
+    -- Check if the Spoon contains a meta.json
+    local metaData = {}
+    local mf = io.open(spoonPath.."meta.json", "r")
+    if mf then
+        local fileData = mf:read("*a")
+        mf:close()
+        local json = require("hs.json")
+        local metaDataTmp = json.decode(fileData)
+        if metaDataTmp then
+            metaData = metaDataTmp
+        end
+    end
+
     -- Load the Spoon code
     local obj = require(name)
 
     if obj then
+      -- Inject the full path of the Spoon
+      obj.spoonPath = spoonPath
+      -- Inject the Spoon's metadata
+      obj.spoonMeta = metaData
+
       -- If the Spoon has an init method, call it
       if obj.init then
         obj:init()
@@ -583,7 +628,7 @@ hs.fileDroppedToDockIconCallback = nil
 ---
 --- Notes:
 ---  * This is an `hs.toolbar` object that is shown by default in the Hammerspoon Console
----  * You can remove this toolbar by adding `hs.console.toolbar(nil)` to your config, or you can replace it with your own `hs.toolbar` object
+---  * You can remove this toolbar by adding `hs.console.toolbar(nil)` to your config, or you can replace it with your own `hs.webview.toolbar` object
   local toolbar = require("hs.webview.toolbar")
   local console = require("hs.console")
   local image = require("hs.image")

@@ -125,6 +125,7 @@ static int chooserIsVisible(lua_State *L) {
 ///   * image - An `hs.image` image object that will be displayed next to the choice
 ///  * Any other keys/values in each choice table will be retained by the chooser and returned to the completion callback when a choice is made. This is useful for storing UUIDs or other non-user-facing information, however, it is important to note that you should not store userdata objects in the table - it is run through internal conversion functions, so only basic Lua types should be stored.
 ///  * If a function is given, it will be called once, when the chooser window is displayed. The results are then cached until this method is called again, or `hs.chooser:refreshChoicesCallback()` is called.
+///  * If you're using a hs.styledtext object for text or subText choices, make sure you specify a color, otherwise your text could appear transparent depending on the bgDark setting.
 ///
 /// Example:
 ///  ```
@@ -138,7 +139,7 @@ static int chooserIsVisible(lua_State *L) {
 ///    ["subText"] = "I wonder what I should type here?",
 ///    ["uuid"] = "Bbbb"
 ///  },
-///  { ["text"] = "Third Possibility",
+///  { ["text"] = hs.styledtext.new("Third Possibility", {font={size=18}, color=hs.drawing.color.definedCollections.hammerspoon.green}),
 ///    ["subText"] = "What a lot of choosing there is going on here!",
 ///    ["uuid"] = "III3"
 ///  },
@@ -223,12 +224,12 @@ static int chooserShowCallback(lua_State *L) {
     return 1;
 }
 
-/// hs.chooser:refreshChoicesCallback() -> hs.chooser object
+/// hs.chooser:refreshChoicesCallback([reload]) -> hs.chooser object
 /// Method
 /// Refreshes the choices data from a callback
 ///
 /// Parameters:
-///  * None
+///  * reload - An optional parameter that reloads the chooser results to take into account the current query string (defaults to `false`)
 ///
 /// Returns:
 ///  * The `hs.chooser` object
@@ -237,14 +238,20 @@ static int chooserShowCallback(lua_State *L) {
 ///  * This method will do nothing if you have not set a function with `hs.chooser:choices()`
 static int chooserRefreshChoicesCallback(lua_State *L) {
     LuaSkin *skin = [LuaSkin shared];
-    [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBREAK];
+    [skin checkArgs:LS_TUSERDATA, USERDATA_TAG, LS_TBOOLEAN | LS_TOPTIONAL, LS_TBREAK];
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
+
+    BOOL reload;
+    reload = lua_toboolean(L, 2);
 
     if (chooser.choicesCallbackRef != LUA_NOREF && chooser.choicesCallbackRef != LUA_REFNIL) {
         [chooser clearChoices];
         [chooser getChoices];
         [chooser updateChoices];
+        if (reload == YES) {
+            [chooser controlTextDidChange:[NSNotification notificationWithName:@"Unused" object:nil]];
+        }
     }
 
     lua_pushvalue(L, 1);
@@ -307,8 +314,10 @@ static int chooserPlaceholder(lua_State *L) {
 
     HSChooser *chooser = [skin toNSObjectAtIndex:1];
 
-    if (lua_type(L, 2) == LUA_TNIL) {
-        [skin pushNSObject:chooser.queryField.placeholderAttributedString];
+    if (lua_gettop(L) == 1) {
+        NSObject *placeholderString = chooser.queryField.placeholderAttributedString ;
+        if (!placeholderString) placeholderString = chooser.queryField.placeholderString ;
+        [skin pushNSObject:placeholderString] ;
     } else {
         chooser.queryField.placeholderAttributedString = [skin toNSObjectAtIndex:2];
         lua_settop(L, 1);
@@ -780,6 +789,13 @@ static int userdata_gc(lua_State* L) {
             chooser.completionCallbackRef = [skin luaUnref:refTable ref:chooser.completionCallbackRef];
             chooser.rightClickCallbackRef = [skin luaUnref:refTable ref:chooser.rightClickCallbackRef];
             chooser.isObservingThemeChanges = NO;  // Stop observing for interface theme changes.
+
+            NSWindow *theWindow = chooser.window ;
+            if (theWindow.toolbar) {
+                theWindow.toolbar.visible = NO ;
+                theWindow.toolbar = nil ;
+            }
+
             chooser = nil;
         }
     }

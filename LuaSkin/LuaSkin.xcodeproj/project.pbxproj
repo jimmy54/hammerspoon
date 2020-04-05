@@ -103,6 +103,7 @@
 		4FEF59711B29D0FB002344A7 /* Skin.h in Headers */ = {isa = PBXBuildFile; fileRef = 4FEF596F1B29D0FB002344A7 /* Skin.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		4FEF59721B29D0FB002344A7 /* Skin.m in Sources */ = {isa = PBXBuildFile; fileRef = 4FEF59701B29D0FB002344A7 /* Skin.m */; };
 		4FEF5AD51B29E017002344A7 /* liblua.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 4FEF5A981B29E005002344A7 /* liblua.a */; };
+		D671D314231EDA6B0043822A /* luaskin.m in Sources */ = {isa = PBXBuildFile; fileRef = D671D313231EDA6B0043822A /* luaskin.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -190,6 +191,7 @@
 		4FEF596F1B29D0FB002344A7 /* Skin.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; lineEnding = 0; path = Skin.h; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objcpp; };
 		4FEF59701B29D0FB002344A7 /* Skin.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; lineEnding = 0; path = Skin.m; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.objc; };
 		4FEF5A981B29E005002344A7 /* liblua.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = liblua.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		D671D313231EDA6B0043822A /* luaskin.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = luaskin.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -309,6 +311,7 @@
 		4FEF59511B29CE06002344A7 /* LuaSkin */ = {
 			isa = PBXGroup;
 			children = (
+				D671D313231EDA6B0043822A /* luaskin.m */,
 				4F478F0A1DE6251400E0DC38 /* lobjectivec_exceptions.h */,
 				4F478F0B1DE6251400E0DC38 /* lobjectivec_exceptions.m */,
 				4FEF59541B29CE06002344A7 /* LuaSkin.h */,
@@ -480,7 +483,7 @@
 		4FEF59461B29CE06002344A7 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0930;
+				LastUpgradeCheck = 1100;
 				ORGANIZATIONNAME = Hammerspoon;
 				TargetAttributes = {
 					4FEF594E1B29CE06002344A7 = {
@@ -496,10 +499,11 @@
 			};
 			buildConfigurationList = 4FEF59491B29CE06002344A7 /* Build configuration list for PBXProject "LuaSkin" */;
 			compatibilityVersion = "Xcode 3.2";
-			developmentRegion = English;
+			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				Base,
 			);
 			mainGroup = 4FEF59451B29CE06002344A7;
 			productRefGroup = 4FEF59501B29CE06002344A7 /* Products */;
@@ -539,6 +543,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4FEF59721B29D0FB002344A7 /* Skin.m in Sources */,
+				D671D314231EDA6B0043822A /* luaskin.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -607,6 +612,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_MODULES = YES;
@@ -650,7 +656,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				MACOSX_DEPLOYMENT_TARGET = 10.12;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -767,6 +773,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_MODULES = YES;
@@ -810,7 +817,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				MACOSX_DEPLOYMENT_TARGET = 10.12;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
@@ -835,6 +842,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
 				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_MODULES = YES;
@@ -870,7 +878,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 10.10;
+				MACOSX_DEPLOYMENT_TARGET = 10.12;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				STRIP_INSTALLED_PRODUCT = NO;

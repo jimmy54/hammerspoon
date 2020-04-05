@@ -3,6 +3,7 @@
 #import <CoreServices/CoreServices.h>
 #import <LuaSkin/LuaSkin.h>
 #import "../../Hammerspoon/MJAppDelegate.h"
+#import "../../Hammerspoon/MJDockIcon.h"
 
 static int refTable;
 NSArray *defaultContentTypes = nil;
@@ -85,6 +86,9 @@ static HSURLEventHandler *eventHandler;
 }
 
 - (void)handleAppleEvent:(NSAppleEventDescriptor *)event withReplyEvent: (NSAppleEventDescriptor * __unused)replyEvent {
+    // This is a completely disgusting workaround - starting in macOS 10.15 for some reason the OS reveals our Dock icon even if it's hidden, before we receive an Apple Event, so let's reassert our expected state before we go any further.
+    MJDockIconSetVisible(MJDockIconVisible());
+
     [self callbackWithURL:[[event paramDescriptorForKeyword:keyDirectObject] stringValue]];
 }
 
@@ -101,7 +105,7 @@ static HSURLEventHandler *eventHandler;
 
     if ([openUrl hasPrefix:@"/"]) {
         openUrl = [NSString stringWithFormat:@"file://%@", openUrl];
-        openUrl = [openUrl stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+        openUrl = [openUrl stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
     }
 
     // Split the URL into its components
@@ -121,8 +125,8 @@ static HSURLEventHandler *eventHandler;
         NSArray *bits = [queryPair componentsSeparatedByString:@"="];
         if ([bits count] != 2) { continue; }
 
-        NSString *key = [[bits objectAtIndex:0] stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
-        NSString *value = [[bits objectAtIndex:1] stringByReplacingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+        NSString *key = [[bits objectAtIndex:0] stringByRemovingPercentEncoding];
+        NSString *value = [[bits objectAtIndex:1] stringByRemovingPercentEncoding];
 
         [pairs setObject:value forKey:key];
     }
@@ -310,8 +314,7 @@ static int urleventopenURLWithBundle(lua_State *L) {
 static int urlevent_setup() {
     eventHandler = [[HSURLEventHandler alloc] init];
 
-    defaultContentTypes = @[(__bridge NSString *)kUTTypeHTML,
-                            (__bridge NSString *)kUTTypeURL,
+    defaultContentTypes = @[(__bridge NSString *)kUTTypeURL,
                             (__bridge NSString *)kUTTypeFileURL,
                             (__bridge NSString *)kUTTypeText
                             ];

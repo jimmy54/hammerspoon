@@ -65,6 +65,35 @@ static AXUIElementRef system_wide_element() {
     return element;
 }
 
+/// hs.window.timeout(value) -> boolean
+/// Function
+/// Sets the timeout value used in the accessibility API.
+///
+/// Parameters:
+///  * value - The number of seconds for the new timeout value.
+///
+/// Returns:
+///  * `true` is succesful otherwise `false` if an error occured.
+static int window_timeout(lua_State* L) {
+    LuaSkin *skin = [LuaSkin shared] ;
+    [skin checkArgs: LS_TNUMBER, LS_TBREAK] ;
+    NSNumber *value = [skin toNSObjectAtIndex:1] ;
+    float fvalue = [value floatValue];
+    AXError result = AXUIElementSetMessagingTimeout(system_wide_element(), fvalue);
+    if (result == kAXErrorIllegalArgument) {
+        [LuaSkin logError:@"hs.window.timeout() - One or more of the arguments is an illegal value (timeout values must be positive)."];
+        lua_pushboolean(L, false);
+        return 1;
+    }
+    if (result == kAXErrorInvalidUIElement) {
+        [LuaSkin logError:@"hs.window.timeout() - The AXUIElementRef is invalid."];
+        lua_pushboolean(L, false);
+        return 1;
+    }
+    lua_pushboolean(L, true);
+    return 1;
+}
+
 /// hs.window.focusedWindow() -> window
 /// Constructor
 /// Returns the window that has keyboard/mouse focus
@@ -424,6 +453,31 @@ static int window_getZoomButtonRect(lua_State* L) {
     lua_setfield(L, -2, "h");
 
     return 1;
+cleanup:
+    lua_pushnil(L);
+    return 1;
+}
+
+/// hs.window:isMaximizable() -> bool or nil
+/// Method
+/// Determines if a window is maximizable
+///
+/// Paramters:
+///  * None
+///
+/// Returns:
+///  * True if the window is maximizable, False if it isn't, or nil if an error occurred
+static int window_isMaximizable(lua_State *L) {
+    AXUIElementRef win = get_window_arg(L, 1);
+    AXUIElementRef button = nil;
+    CFBooleanRef isEnabled;
+
+    if (AXUIElementCopyAttributeValue(win, kAXZoomButtonAttribute, (CFTypeRef*)&button) != noErr) goto cleanup;
+    if (AXUIElementCopyAttributeValue(button, kAXEnabledAttribute, (CFTypeRef*)&isEnabled) != noErr) goto cleanup;
+
+    lua_pushboolean(L, isEnabled == kCFBooleanTrue ? true : false);
+    return 1;
+
 cleanup:
     lua_pushnil(L);
     return 1;
@@ -850,6 +904,7 @@ static const luaL_Reg windowlib[] = {
     {"_minimize", window__minimize},
     {"_unminimize", window__unminimize},
     {"isMinimized", window_isminimized},
+    {"isMaximizable", window_isMaximizable},
     {"pid", window_pid},
     {"application", window_application},
     {"focusTab", window_focustab},
@@ -863,6 +918,7 @@ static const luaL_Reg windowlib[] = {
     {"_setFullScreen", window__setfullscreen},
     {"isFullScreen", window_isfullscreen},
     {"snapshot", window_snapshot},
+    {"timeout", window_timeout},
 
     {NULL, NULL}
 };

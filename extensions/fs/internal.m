@@ -1008,21 +1008,28 @@ static int fs_displayName(lua_State *L) {
     return 1 ;
 }
 
-/// hs.fs.getHomeDirectoryAsBookmark() -> data
+/// hs.fs.pathToBookmark(path) -> string | nil
 /// Function
-/// Returns the Home Directory path as binary encoded bookmark data.
+/// Returns the path as binary encoded bookmark data.
 ///
 /// Parameters:
-///  * None
+///  * path - The path to encode
 ///
 /// Returns:
-///  * Bookmark data.
-///
-/// Notes:
-///  * This is primarily just intended for testing `hs.fs.getPathFromBookmark`.
-static int fs_getHomeDirectoryAsBookmark(lua_State *L) {
+///  * Bookmark data in a binary encoded string or `nil` if path is invalid.
+static int fs_pathToBookmark(lua_State *L) {
     LuaSkin *skin = [LuaSkin shared] ;
-    NSData *bookmarkData = [[NSURL fileURLWithPath:NSHomeDirectory()]
+    [skin checkArgs:LS_TSTRING, LS_TBREAK] ;
+
+    NSString *filePath = [skin toNSObjectAtIndex:1];
+    char *absolutePath = realpath([filePath stringByExpandingTildeInPath].UTF8String, NULL);
+
+    if (!absolutePath) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    NSData *bookmarkData = [[NSURL fileURLWithPath:filePath]
                     bookmarkDataWithOptions:0
                     includingResourceValuesForKeys:nil
                     relativeToURL:nil
@@ -1031,7 +1038,7 @@ static int fs_getHomeDirectoryAsBookmark(lua_State *L) {
     return 1 ;
 }
 
-/// hs.fs.getPathFromBookmark(data) -> string | nil
+/// hs.fs.pathFromBookmark(data) -> string | nil, string
 /// Function
 /// Gets the file path from a binary encoded bookmark.
 ///
@@ -1040,6 +1047,7 @@ static int fs_getHomeDirectoryAsBookmark(lua_State *L) {
 ///
 /// Returns:
 ///  * A string containing the path to the Bookmark URL or `nil` if an error occurs.
+///  * An error message if an error occurs.
 ///
 /// Notes:
 ///  * A bookmark provides a persistent reference to a file-system resource.
@@ -1047,7 +1055,8 @@ static int fs_getHomeDirectoryAsBookmark(lua_State *L) {
 ///    A bookmark’s association with a file-system resource (typically a file or folder)
 ///    usually continues to work if the user moves or renames the resource, or if the
 ///    user relaunches your app or restarts the system.
-static int fs_getPathFromBookmark(lua_State *L) {
+///  * No volumes are mounted during the resolution of the bookmark data.
+static int fs_pathFromBookmark(lua_State *L) {
     LuaSkin *skin = [LuaSkin shared] ;
     [skin checkArgs:LS_TSTRING, LS_TBREAK] ;
     
@@ -1057,15 +1066,16 @@ static int fs_getPathFromBookmark(lua_State *L) {
     
     NSError *error = nil;
     NSURL *url = [NSURL URLByResolvingBookmarkData:bookmarkData
-                                           options:0
+                                           options:NSURLBookmarkResolutionWithoutMounting
                                      relativeToURL:nil
                                bookmarkDataIsStale:nil
                                              error:&error];
     
     if (error != nil) {
-        [skin logError:[NSString stringWithFormat:@"Error resolving URL from bookmark: %@", error]];
+        NSString *errorMessage = [NSString stringWithFormat:@"Error resolving URL from bookmark: %@", error];
         lua_pushnil(L) ;
-        return 1 ;
+        [skin pushNSObject:errorMessage] ;
+        return 2 ;
     }
     
     if (url != nil){
@@ -1102,8 +1112,8 @@ static const struct luaL_Reg fslib[] = {
     {"fileUTIalternate", hs_fileUTIalternate},
     {"pathToAbsolute", hs_pathToAbsolute},
     {"displayName", fs_displayName},
-    {"getPathFromBookmark", fs_getPathFromBookmark},
-    {"getHomeDirectoryAsBookmark", fs_getHomeDirectoryAsBookmark},
+    {"pathToBookmark", fs_pathToBookmark},
+    {"pathFromBookmark", fs_pathFromBookmark},
     {NULL, NULL},
 };
 
